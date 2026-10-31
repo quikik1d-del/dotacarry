@@ -16,7 +16,8 @@ jobs:
       - name: Fetch data
         env:
           OPENDOTA_KEY: ${{ secrets.OPENDOTA_KEY }}
-        run: python fetch_data.py
+          STRATZ_TOKEN: ${{ secrets.STRATZ_TOKEN }}
+        run: python -u fetch_data.py
       - name: Commit
         run: |
           git config user.name "carry-bot"

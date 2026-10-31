@@ -48,6 +48,7 @@ a{color:var(--ac)}
 .strip{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
 .it{text-align:center}.it img{width:44px;height:32px;border-radius:4px;display:block;background:var(--bd)}
 .it i{font-style:normal;font-size:.75rem;color:var(--mu)}
+.im{width:36px;height:26px;border-radius:4px;vertical-align:middle;margin-right:6px;background:var(--bd)}
 .hm{width:256px;max-width:100%;border-radius:8px;border:1px solid var(--bd);display:block;margin-top:8px}
 .msg{padding:24px;text-align:center;color:var(--mu)}
 </style>
@@ -64,7 +65,7 @@ a{color:var(--ac)}
 </main>
 <dialog id="dlg"></dialog>
 <script>
-var D=null,CDN="https://cdn.cloudflare.steamstatic.com",dlg=document.getElementById("dlg");
+var PH="all",CUR=null,D=null,CDN="https://cdn.cloudflare.steamstatic.com",dlg=document.getElementById("dlg");
 function mm(x){if(x==null)return"—";var m=Math.floor(x),s=Math.round((x-m)*60);return m+":"+(s<10?"0":"")+s}
 function v(x){return x==null?"—":x}
 function ago(t){var h=(Date.now()/1000-t)/3600;return h<1?Math.round(h*60)+" мин назад":Math.round(h)+" ч назад"}
@@ -77,17 +78,19 @@ app.innerHTML=hs.map(function(h){
 return'<button class="tile" data-i="'+h.i+'"><img loading="lazy" src="'+CDN+h.img+'" alt="" onerror="this.style.visibility=\'hidden\'"><div><b>'+h.hero+'</b><small>'+h.games+' игр · '+h.wr+'%</small></div></button>'}).join("");
 }
 function draw(c,cells){
+cells=(cells||[]).filter(function(p){return PH=="all"||(p[3]==null?0:p[3])==+PH});
 var x=c.getContext("2d");x.fillStyle="#1c2a22";x.fillRect(0,0,256,256);
 x.strokeStyle="#3b6ea5";x.lineWidth=10;x.globalAlpha=.55;x.beginPath();x.moveTo(0,0);x.lineTo(256,256);x.stroke();x.globalAlpha=1;
-x.fillStyle="#9fb7a8";x.font="11px sans-serif";x.fillText("Radiant (свой лайн внизу)",6,248);
+x.fillStyle="#9fb7a8";x.font="11px sans-serif";x.fillText("Схема: ваша база слева внизу, лайн внизу справа",6,248);
 if(!cells||!cells.length){x.fillText("нет данных о позиции",70,120);return}
 var mx=0;cells.forEach(function(p){if(p[2]>mx)mx=p[2]});
 cells.forEach(function(p){var a=Math.min(1,.25+p[2]/mx);x.fillStyle="rgba(255,90,40,"+a+")";x.fillRect((p[0]-64)*2-1,(192-p[1])*2-1,4,4)});
 }
+function redraw(){dlg.querySelectorAll("canvas.hm").forEach(function(c){var gi=+c.dataset.gi;draw(c,gi<0?CUR.heat:CUR.list[gi].pos)})}
 function open(i){
-var h=D.heroes[i],f=h.farm;
-var builds=h.builds.map(function(b){return"<tr><td>"+b.items.join(" → ")+"</td><td>"+b.games+"</td><td>"+b.wr+"%</td></tr>"}).join("")||'<tr><td colspan="3" class="mu">Пока мало данных</td></tr>';
-var items=h.items.map(function(x){return"<tr><td>"+x.name+"</td><td>"+mm(x.time)+"</td><td>"+x.share+"%</td><td>"+x.wr+"%</td></tr>"}).join("")||'<tr><td colspan="4" class="mu">Пока мало данных</td></tr>';
+var h=D.heroes[i],f=h.farm;CUR=h;
+var builds=h.builds.map(function(b){return"<tr><td>"+b.items.map(function(n,j){return'<img class="im" loading="lazy" src="'+CDN+(b.imgs?b.imgs[j]:"")+'" title="'+n+'" alt="'+n+'">'}).join("→")+"</td><td>"+b.games+"</td><td>"+b.wr+"%</td></tr>"}).join("")||'<tr><td colspan="3" class="mu">Пока мало данных</td></tr>';
+var items=h.items.map(function(x){return'<tr><td><img class="im" loading="lazy" src="'+CDN+(x.img||"")+'" alt="" onerror="this.style.visibility=\'hidden\'">'+x.name+"</td><td>"+mm(x.time)+"</td><td>"+x.share+"%</td><td>"+x.wr+"%</td></tr>"}).join("")||'<tr><td colspan="4" class="mu">Пока мало данных</td></tr>';
 function ic(p,extra){return'<span class="it"><img loading="lazy" src="'+CDN+p[2]+'" alt="" title="'+p[0]+(extra?" — "+extra:"")+'" onerror="this.style.visibility=\'hidden\'"><i>'+Math.round(p[1])+'m</i></span>'}
 var games=(h.list||[]).map(function(g,gi){
 var its=g.items.map(function(p){return ic(p)}).join("");
@@ -95,7 +98,7 @@ var nex=[];
 var nt=(g.neut||[]).map(function(p){var ex=Object.keys(p[3]||{}).map(function(k){return k+": "+p[3][k]}).join(", ");if(ex)nex.push(p[0]+" ("+ex+")");return ic(p,ex)}).join("");
 return'<details class="g"><summary><span class="'+(g.win?"w":"l")+'">'+(g.win?"Победа":"Поражение")+'</span><span>'+g.dur+' мин</span><span>'+v(g.kda[0])+'/'+v(g.kda[1])+'/'+v(g.kda[2])+'</span><span>GPM '+v(g.gpm)+'</span><span class="mu">'+ago(g.t)+'</span></summary><div class="in">'+
 '<div class="mu">Добития на 10 / 20 / 30 мин: '+v(g.lh[0])+' / '+v(g.lh[1])+' / '+v(g.lh[2])+'</div>'+
-'<div class="strip">'+its+'</div>'+(nt?'<div class="mu">Нейтральные предметы</div><div class="strip">'+nt+'</div>':'')+(nex.length?'<div class="mu">Зачарования: '+nex.join("; ")+'</div>':'')+'<div class="mu">Позиция на линии в начале игры</div><canvas class="hm" width="256" height="256" data-gi="'+gi+'"></canvas>'+
+'<div class="strip">'+its+'</div>'+(nt?'<div class="mu">Нейтральные предметы</div><div class="strip">'+nt+'</div>':'')+(nex.length?'<div class="mu">Зачарования: '+nex.join("; ")+'</div>':'')+'<div class="mu">Перемещение по карте</div><canvas class="hm" width="256" height="256" data-gi="'+gi+'"></canvas>'+
 (g.id?'<div class="mu" style="margin-top:6px">Матч '+g.id+' · <a href="https://www.opendota.com/matches/'+g.id+'" target="_blank" rel="noopener">в OpenDota</a></div>':'')+
 '</div></details>'}).join("")||'<div class="mu">Список игр появится после следующего обновления.</div>';
 dlg.innerHTML='<div class="head"><img src="'+CDN+h.img+'" alt="" onerror="this.style.display=\'none\'"><div><h2>'+h.hero+'</h2><div class="mu">'+h.games+' игр · '+h.wr+'% побед</div></div><button class="x" aria-label="Закрыть">×</button></div><div class="in">'+
@@ -108,12 +111,13 @@ dlg.innerHTML='<div class="head"><img src="'+CDN+h.img+'" alt="" onerror="this.s
 '<h3>Частые сборки (первые 4 предмета)</h3><div class="sc"><table><tr><th>Порядок</th><th>Игр</th><th>Винрейт</th></tr>'+builds+'</table></div>'+
 '<h3>Тайминги предметов (медиана)</h3><div class="sc"><table><tr><th>Предмет</th><th>Время</th><th>Покупают</th><th>Винрейт</th></tr>'+items+'</table></div>'+
 '<h3>Нейтральные предметы</h3><div class="strip">'+((h.neutrals||[]).map(function(n){return'<span class="it"><img loading="lazy" src="'+CDN+n.img+'" alt="" title="'+n.name+'" onerror="this.style.visibility=\'hidden\'"><i>'+n.share+'%</i></span>'}).join("")||'<span class="mu">нет данных</span>')+'</div>'+
-'<h3>Где стоит на линии (все игры, первые минуты)</h3><canvas class="hm" width="256" height="256" data-gi="-1"></canvas>'+
+'<h3>Где перемещается по карте (все игры)</h3><select id="ph"><option value="all">Вся игра</option><option value="0">0–10 мин</option><option value="1">10–20 мин</option><option value="2">20–30 мин</option><option value="3">30+ мин</option></select><canvas class="hm" width="256" height="256" data-gi="-1"></canvas>'+
 '<h3>Игры за последние 24 часа</h3>'+games+'</div>';
-dlg.querySelectorAll("canvas.hm").forEach(function(c){var gi=+c.dataset.gi;draw(c,gi<0?h.heat:h.list[gi].pos)});
+dlg.querySelector("#ph").value=PH;redraw();
 dlg.showModal();dlg.scrollTop=0;
 }
 document.getElementById("app").onclick=function(e){var t=e.target.closest(".tile");if(t)open(+t.dataset.i)};
+dlg.onchange=function(e){if(e.target.id=="ph"){PH=e.target.value;redraw()}};
 dlg.onclick=function(e){if(e.target===dlg||e.target.closest(".x"))dlg.close()};
 fetch("data.json?"+Date.now()).then(function(r){return r.json()}).then(function(d){
 D=d;var m=Math.round((Date.now()/1000-d.updated)/60);
