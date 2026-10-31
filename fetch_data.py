@@ -60,6 +60,17 @@ def med(vals, nd=1):
     return round(median(vals), nd) if vals else None
 
 
+def lane_cells(p, radiant):
+    cells = []
+    for xs, ys in (p.get("lane_pos") or {}).items():
+        for y, c in (ys or {}).items():
+            x, yy = int(xs), int(y)
+            if not radiant:                     # зеркалим Dire в сторону Radiant
+                x, yy = 256 - x, 256 - yy
+            cells.append([x, yy, c])
+    return cells
+
+
 def extract(m, p):
     first = {}
     for e in p.get("purchase_log") or []:
@@ -76,6 +87,10 @@ def extract(m, p):
         "nw": [at(p.get("gold_t"), i) for i in (10, 20, 30)],
         "neutral": p.get("neutral_kills"), "lane": p.get("lane_efficiency_pct"),
         "total_lh": p.get("last_hits"), "dur": m.get("duration"),
+        "pos": lane_cells(p, p["player_slot"] < 128),
+        "neut": [[e.get("item_key"), round((e.get("time") or 0) / 60, 1),
+                  {k: v for k, v in e.items() if k not in ("time", "item_key")}]
+                 for e in (p.get("neutral_item_history") or []) if isinstance(e, dict)],
     }
 
 
@@ -173,16 +188,34 @@ def aggregate(records, heroes, items):
         build_rows = [{"items": [(items.get(k) or {}).get("dname", k) for k in key],
                        "games": c, "wr": round(100 * bw[key] / c)}
                       for key, c in builds.most_common(3)]
+        def meta(k):
+            info = items.get(k) or {}
+            return info.get("dname", k), (info.get("img") or "").split("?")[0]
         games = []
         for r in sorted(rs, key=lambda r: -r["t"])[:30]:
-            big = sorted((t, (items.get(k) or {}).get("dname", k)) for k, t in r["items"].items()
-                         if (items.get(k) or {}).get("cost", 0) >= BIG_ITEM and not k.startswith("recipe_"))
+            tl = sorted((t, k) for k, t in r["items"].items()
+                        if (items.get(k) or {}).get("cost", 0) >= 500 and not k.startswith("recipe_"))
+            cells = sorted(r.get("pos") or [], key=lambda c: -c[2])[:150]
             games.append({"id": r.get("mid"), "t": r["t"], "win": r["win"],
                           "dur": round((r.get("dur") or 0) / 60), "gpm": r["gpm"],
                           "kda": [r.get("k"), r.get("d"), r.get("a")], "lh": r["lh"],
-                          "items": [[n, round(t, 1)] for t, n in big]})
+                          "items": [[meta(k)[0], round(t, 1), meta(k)[1]] for t, k in tl],
+                          "neut": [[meta(k)[0], t, meta(k)[1], ex] for k, t, ex in (r.get("neut") or []) if k],
+                          "pos": cells})
+        heat = Counter()
+        for r in rs:
+            for x, y, c in r.get("pos") or []:
+                heat[(x, y)] += c
+        heat_list = [[x, y, c] for (x, y), c in heat.most_common(500)]
+        nc = Counter()
+        for r in rs:
+            for name in {k for k, _, _ in (r.get("neut") or []) if k}:
+                nc[name] += 1
+        neutrals = [{"name": meta(k)[0], "img": meta(k)[1], "share": round(100 * c / n)}
+                    for k, c in nc.most_common(8)]
         out.append({
             "img": ((heroes.get(str(hid)) or {}).get("img") or "").split("?")[0], "list": games,
+            "heat": heat_list, "neutrals": neutrals,
             "hero": (heroes.get(str(hid)) or {}).get("localized_name", str(hid)),
             "games": n, "wr": round(100 * sum(r["win"] for r in rs) / n, 1),
             "builds": build_rows, "items": item_rows,
