@@ -5,54 +5,61 @@
 import json, os, time, urllib.request, urllib.parse
 from collections import Counter, defaultdict
 from statistics import median
-
+ 
 API = "https://api.opendota.com/api"
 KEY = os.environ.get("OPENDOTA_KEY", "")
 MAX_FETCH = int(os.environ.get("MAX_FETCH", "120"))
 PAUSE = 0.15 if KEY else 1.1
 DAY = 86400
+START = time.time()
+BUDGET = int(os.environ.get("BUDGET", "480"))  # секунд на запуск
+ 
+ 
+def out_of_time():
+    return time.time() - START > BUDGET
 MIN_RANK = 80          # Immortal
 MIN_GAMES = 3          # минимум игр на героя для показа
 BIG_ITEM = 1400        # порог стоимости "значимого" предмета
-
-
+ 
+ 
 def call(path, params=None, post=False):
     p = dict(params or {})
     if KEY:
         p["api_key"] = KEY
     url = API + path + ("?" + urllib.parse.urlencode(p) if p else "")
-    for attempt in range(3):
+    for attempt in range(2):
         try:
+            print("запрос", path, flush=True)
             req = urllib.request.Request(url, data=b"" if post else None,
                                          method="POST" if post else "GET",
                                          headers={"User-Agent": "carry-hub"})
-            with urllib.request.urlopen(req, timeout=40) as r:
+            with urllib.request.urlopen(req, timeout=20) as r:
                 body = r.read().decode()
             time.sleep(PAUSE)
             return json.loads(body) if body else None
         except Exception as e:
-            print("retry", path, e)
-            time.sleep(3 * (attempt + 1))
+            print("ошибка", path, e, flush=True)
+            time.sleep(3)
     return None
-
-
+ 
+ 
 def load(name, default):
     try:
         with open(name, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return default
-
-
+ 
+ 
 def at(arr, i):
     return arr[i] if isinstance(arr, list) and len(arr) > i else None
-
-
+ 
+ 
 def med(vals, nd=1):
     vals = [v for v in vals if v is not None]
     return round(median(vals), nd) if vals else None
-
-
+ 
+ 
 def extract(m, p):
     first = {}
     for e in p.get("purchase_log") or []:
@@ -69,19 +76,21 @@ def extract(m, p):
         "neutral": p.get("neutral_kills"), "lane": p.get("lane_efficiency_pct"),
         "total_lh": p.get("last_hits"), "dur": m.get("duration"),
     }
-
-
+ 
+ 
 def pick_carry(m, radiant):
     c = [p for p in m["players"]
          if (p["player_slot"] < 128) == radiant and p.get("lane_role") == 1
          and not p.get("is_roaming")]
     return max(c, key=lambda p: p.get("last_hits") or 0) if c else None
-
-
+ 
+ 
 def collect(cache, patch_id):
     now = int(time.time())
     seen, cands, last = cache["seen"], [], None
     for _ in range(5):
+        if out_of_time():
+            break
         params = {"min_rank": MIN_RANK}
         if last:
             params["less_than_match_id"] = last
@@ -98,7 +107,11 @@ def collect(cache, patch_id):
             cands.append((x["match_id"], x["start_time"]))
     # сначала те, что уже запрошены на парсинг
     cands.sort(key=lambda c: seen.get(str(c[0]), {}).get("s") != "req")
+    print("кандидатов:", len(cands), flush=True)
     for mid, st in cands[:MAX_FETCH]:
+        if out_of_time():
+            print("лимит времени, сохраняю что есть", flush=True)
+            break
         m = call(f"/matches/{mid}")
         sid = str(mid)
         if not m or not m.get("players"):
@@ -119,8 +132,8 @@ def collect(cache, patch_id):
     cutoff = now - DAY
     cache["records"] = [r for r in cache["records"] if r["t"] >= cutoff]
     cache["seen"] = {k: v for k, v in seen.items() if v["t"] >= cutoff}
-
-
+ 
+ 
 def aggregate(records, heroes, items):
     by = defaultdict(list)
     for r in records:
@@ -169,8 +182,8 @@ def aggregate(records, heroes, items):
         })
     out.sort(key=lambda h: -h["games"])
     return out
-
-
+ 
+ 
 def main():
     patches = call("/constants/patch") or []
     heroes = call("/constants/heroes") or {}
@@ -189,7 +202,8 @@ def main():
     with open("cache.json", "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False)
     print("керри-игр:", data["total"], "героев:", len(data["heroes"]))
-
-
+ 
+ 
 if __name__ == "__main__":
     main()
+ 
