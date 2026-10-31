@@ -18,7 +18,7 @@ BUDGET = int(os.environ.get("BUDGET", "480"))  # секунд на запуск
 def out_of_time():
     return time.time() - START > BUDGET
 MIN_RANK = 80          # Immortal
-MIN_GAMES = 3          # минимум игр на героя для показа
+MIN_GAMES = 1          # минимум игр на героя для показа
 BIG_ITEM = 1400        # порог стоимости "значимого" предмета
  
  
