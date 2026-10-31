@@ -5,7 +5,7 @@
 import json, os, time, urllib.request, urllib.parse
 from collections import Counter, defaultdict
 from statistics import median
- 
+
 API = "https://api.opendota.com/api"
 KEY = os.environ.get("OPENDOTA_KEY", "")
 MAX_FETCH = int(os.environ.get("MAX_FETCH", "120"))
@@ -13,15 +13,15 @@ PAUSE = 0.15 if KEY else 1.1
 DAY = 86400
 START = time.time()
 BUDGET = int(os.environ.get("BUDGET", "480"))  # секунд на запуск
- 
- 
+
+
 def out_of_time():
     return time.time() - START > BUDGET
 MIN_RANK = 80          # Immortal
 MIN_GAMES = 1          # минимум игр на героя для показа
 BIG_ITEM = 1400        # порог стоимости "значимого" предмета
- 
- 
+
+
 def call(path, params=None, post=False):
     p = dict(params or {})
     if KEY:
@@ -41,25 +41,25 @@ def call(path, params=None, post=False):
             print("ошибка", path, e, flush=True)
             time.sleep(3)
     return None
- 
- 
+
+
 def load(name, default):
     try:
         with open(name, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return default
- 
- 
+
+
 def at(arr, i):
     return arr[i] if isinstance(arr, list) and len(arr) > i else None
- 
- 
+
+
 def med(vals, nd=1):
     vals = [v for v in vals if v is not None]
     return round(median(vals), nd) if vals else None
- 
- 
+
+
 def extract(m, p):
     first = {}
     for e in p.get("purchase_log") or []:
@@ -67,7 +67,8 @@ def extract(m, p):
         if k not in first or t < first[k]:
             first[k] = t
     return {
-        "t": m["start_time"], "hero": p["hero_id"],
+        "t": m["start_time"], "hero": p["hero_id"], "mid": m["match_id"],
+        "k": p.get("kills"), "d": p.get("deaths"), "a": p.get("assists"),
         "win": bool(m["radiant_win"]) == (p["player_slot"] < 128),
         "items": {k: round(t / 60, 1) for k, t in first.items()},
         "gpm": p.get("gold_per_min"), "xpm": p.get("xp_per_min"),
@@ -76,15 +77,15 @@ def extract(m, p):
         "neutral": p.get("neutral_kills"), "lane": p.get("lane_efficiency_pct"),
         "total_lh": p.get("last_hits"), "dur": m.get("duration"),
     }
- 
- 
+
+
 def pick_carry(m, radiant):
     c = [p for p in m["players"]
          if (p["player_slot"] < 128) == radiant and p.get("lane_role") == 1
          and not p.get("is_roaming")]
     return max(c, key=lambda p: p.get("last_hits") or 0) if c else None
- 
- 
+
+
 def collect(cache, patch_id):
     now = int(time.time())
     seen, cands, last = cache["seen"], [], None
@@ -108,6 +109,7 @@ def collect(cache, patch_id):
     # сначала те, что уже запрошены на парсинг
     cands.sort(key=lambda c: seen.get(str(c[0]), {}).get("s") != "req")
     print("кандидатов:", len(cands), flush=True)
+    blocked = False
     for mid, st in cands[:MAX_FETCH]:
         if out_of_time():
             print("лимит времени, сохраняю что есть", flush=True)
@@ -117,9 +119,12 @@ def collect(cache, patch_id):
         if not m or not m.get("players"):
             continue
         if not any(p.get("purchase_log") for p in m["players"]):
-            if seen.get(sid, {}).get("s") != "req":
-                call(f"/request/{mid}", post=True)
-                seen[sid] = {"s": "req", "t": st}
+            if seen.get(sid, {}).get("s") != "req" and not blocked:
+                if call(f"/request/{mid}", post=True) is None:
+                    blocked = True
+                    print("лимит на разбор реплеев, больше не запрашиваю", flush=True)
+                else:
+                    seen[sid] = {"s": "req", "t": st}
             continue
         if m.get("patch") != patch_id:
             seen[sid] = {"s": "skip", "t": st}
@@ -132,8 +137,8 @@ def collect(cache, patch_id):
     cutoff = now - DAY
     cache["records"] = [r for r in cache["records"] if r["t"] >= cutoff]
     cache["seen"] = {k: v for k, v in seen.items() if v["t"] >= cutoff}
- 
- 
+
+
 def aggregate(records, heroes, items):
     by = defaultdict(list)
     for r in records:
@@ -168,7 +173,16 @@ def aggregate(records, heroes, items):
         build_rows = [{"items": [(items.get(k) or {}).get("dname", k) for k in key],
                        "games": c, "wr": round(100 * bw[key] / c)}
                       for key, c in builds.most_common(3)]
+        games = []
+        for r in sorted(rs, key=lambda r: -r["t"])[:30]:
+            big = sorted((t, (items.get(k) or {}).get("dname", k)) for k, t in r["items"].items()
+                         if (items.get(k) or {}).get("cost", 0) >= BIG_ITEM and not k.startswith("recipe_"))
+            games.append({"id": r.get("mid"), "t": r["t"], "win": r["win"],
+                          "dur": round((r.get("dur") or 0) / 60), "gpm": r["gpm"],
+                          "kda": [r.get("k"), r.get("d"), r.get("a")], "lh": r["lh"],
+                          "items": [[n, round(t, 1)] for t, n in big]})
         out.append({
+            "img": ((heroes.get(str(hid)) or {}).get("img") or "").split("?")[0], "list": games,
             "hero": (heroes.get(str(hid)) or {}).get("localized_name", str(hid)),
             "games": n, "wr": round(100 * sum(r["win"] for r in rs) / n, 1),
             "builds": build_rows, "items": item_rows,
@@ -182,8 +196,8 @@ def aggregate(records, heroes, items):
         })
     out.sort(key=lambda h: -h["games"])
     return out
- 
- 
+
+
 def main():
     patches = call("/constants/patch") or []
     heroes = call("/constants/heroes") or {}
@@ -202,8 +216,7 @@ def main():
     with open("cache.json", "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False)
     print("керри-игр:", data["total"], "героев:", len(data["heroes"]))
- 
- 
+
+
 if __name__ == "__main__":
     main()
- 
