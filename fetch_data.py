@@ -8,11 +8,11 @@ from statistics import median
 
 API = "https://api.opendota.com/api"
 KEY = os.environ.get("OPENDOTA_KEY", "")
-MAX_FETCH = int(os.environ.get("MAX_FETCH", "120"))
+MAX_FETCH = int(os.environ.get("MAX_FETCH", "450" if os.environ.get("STRATZ_TOKEN") else "120"))
 PAUSE = 0.15 if KEY else 1.1
 DAY = 86400
 START = time.time()
-BUDGET = int(os.environ.get("BUDGET", "480"))  # секунд на запуск
+BUDGET = int(os.environ.get("BUDGET", "1200" if os.environ.get("STRATZ_TOKEN") else "480"))  # секунд на запуск
 
 
 def out_of_time():
@@ -199,7 +199,7 @@ def collect_stratz(cache, cands):
 def collect(cache, patch_id):
     now = int(time.time())
     seen, cands, last = cache["seen"], [], None
-    for _ in range(5):
+    for _ in range(8):
         if out_of_time():
             break
         params = {"min_rank": MIN_RANK}
