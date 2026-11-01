@@ -1,7 +1,7 @@
 name: Update carry data
 on:
   schedule:
-    - cron: "0 */2 * * *"
+    - cron: "0 */2 * * *"   # каждые 2 часа
   workflow_dispatch:
 permissions:
   contents: write
