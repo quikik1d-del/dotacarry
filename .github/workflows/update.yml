@@ -1,7 +1,7 @@
 name: Update carry data
 on:
   schedule:
-    - cron: "0 */2 * * *"   # каждые 2 часа
+    - cron: "0 */2 * * *"
   workflow_dispatch:
 permissions:
   contents: write
@@ -24,4 +24,3 @@ jobs:
           git config user.email "bot@users.noreply.github.com"
           git add data.json cache.json
           git diff --cached --quiet || (git commit -m "update data" && git push)
-
