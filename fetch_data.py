@@ -20,7 +20,7 @@ def out_of_time():
 STRATZ = os.environ.get("STRATZ_TOKEN", "")
 ITEMS_BY_ID = {}
 MIN_RANK = 80          # Immortal
-MIN_GAMES = 1          # минимум игр на героя для показа
+MIN_GAMES = 3          # минимум игр на героя для показа
 BIG_ITEM = 1400        # порог стоимости "значимого" предмета
 
 
@@ -257,7 +257,9 @@ def aggregate(records, heroes, items):
     for r in records:
         by[r["hero"]].append(r)
     out = []
-    for hid, rs in by.items():
+    for hid, rs_all in by.items():
+        total = len(rs_all)
+        rs = [r for r in rs_all if r["win"]]      # только победные игры
         if len(rs) < MIN_GAMES:
             continue
         n = len(rs)
@@ -316,7 +318,7 @@ def aggregate(records, heroes, items):
             "img": ((heroes.get(str(hid)) or {}).get("img") or "").split("?")[0], "list": games,
             "heat": heat_list, "neutrals": neutrals,
             "hero": (heroes.get(str(hid)) or {}).get("localized_name", str(hid)),
-            "games": n, "wr": round(100 * sum(r["win"] for r in rs) / n, 1),
+            "games": n, "total": total, "wr": round(100 * n / total, 1),
             "builds": build_rows, "items": item_rows,
             "farm": {
                 "lh": [med([r["lh"][i] for r in rs], 0) for i in range(3)],
